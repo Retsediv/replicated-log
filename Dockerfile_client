@@ -1,0 +1,13 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY client/ ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 6001
+
+CMD ["fastapi", "run", "client.py", "--port", "6001"]
+# CMD ["printenv", "&"]
+# ENTRYPOINT ["tail", "-f", "/dev/null"]
+

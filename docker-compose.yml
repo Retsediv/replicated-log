@@ -1,0 +1,40 @@
+services:
+  master:
+    build:
+      context: .
+      dockerfile: Dockerfile_master
+    ports:
+      - "6000:6000"
+    networks:
+      - app_network
+    develop:
+      watch:
+        - path: ./master/requirements.txt
+          action: rebuild
+        - path: ./master
+          target: /app/
+          action: sync
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile_client
+    ports:
+      - "600${CLIENT_INDEX}:6001"
+    networks:
+      - app_network
+    hostname: client${CLIENT_INDEX}
+    environment:
+      CLIENT_INDEX: ${CLIENT_INDEX}
+    develop:
+      watch:
+        - action: rebuild
+          path: ./client/requirements.txt
+
+        - action: sync
+          path: ./client
+          target: /app/
+
+networks:
+  app_network:
+    driver: bridge
