@@ -36,7 +36,7 @@ def get_messages():
 @app.post("/messages", status_code=201)
 def add_messages(message: Message):
     for client in CLIENTS:
-        url = f"http://{client}:6001/messages"
+        url = f"http://{client}:6001/internal/messages"
         logger.info(f"Sending message to CLIENT#{client}")
 
         respose = requests.post(url, json={"text": message.text}, timeout=10)

@@ -30,7 +30,7 @@ def get_messages():
     return {"messages": messages}
 
 
-@app.post("/messages")
+@app.post("/internal/messages")
 def add_messages(message: Message):
     logger.info(f"Received message: {message.text}")
 
