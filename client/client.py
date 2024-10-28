@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import time
 from typing import List
 
@@ -15,6 +16,7 @@ client_index = int(os.getenv("CLIENT_INDEX", "CLIENT_INDEX not set"))
 
 class Message(BaseModel):
     text: str
+    index: int
 
 
 messages: List[Message] = []
@@ -34,8 +36,9 @@ def get_messages():
 def add_messages(message: Message):
     logger.info(f"Received message: {message.text}")
 
-    logger.info(f"Sleeping for {client_index} seconds")
-    time.sleep(client_index)
+    sleep_time = random.randrange(1, 15)
+    logger.info(f"Sleeping for {sleep_time} seconds")
+    time.sleep(sleep_time)
 
     messages.append(message)
     return
