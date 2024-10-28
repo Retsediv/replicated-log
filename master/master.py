@@ -48,7 +48,7 @@ class Log(object):
 
     @property
     def messages(self):
-        return heapq.nsmallest(self._messages_num, self._messages)
+        return map(lambda x: x[1], heapq.nsmallest(self._messages_num, self._messages))
 
     @property
     def current_index(self):
