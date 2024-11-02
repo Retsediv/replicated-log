@@ -26,6 +26,10 @@ messages: List[Message] = []
 def get_root():
     return {"message": "Hello World from CLIENT", "client_index": client_index}
 
+@app.get("/health")
+def get_health():
+    return
+
 
 @app.get("/messages")
 def get_messages():

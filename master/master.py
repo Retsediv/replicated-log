@@ -1,8 +1,9 @@
 import concurrent.futures
+import enum
 import heapq
 import logging
 import os
-from threading import Lock
+import time
 from typing import List, Set
 
 import requests
@@ -27,6 +28,74 @@ class Message(BaseModel):
     index: int = 0
 
 
+class CLIENT_STATUS(enum.Enum):
+    LIVE = "live"
+    SUSPECTED = "suspected"
+    DEAD = "dead"
+
+
+class ClientsManager(object):
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS)
+
+    def __init__(self):
+        self._clients: List[int] = [i for i in range(0, NUM_CLIENTS)]
+        self._clients_status: List[CLIENT_STATUS] = [
+            CLIENT_STATUS.LIVE for _ in range(0, NUM_CLIENTS)
+        ]
+
+    @property
+    def clients(self):
+        return self._clients
+
+    def __heartbeats(
+        self, client_id: int, min_timeout: float = 0.25, max_timeout: float = 5.0
+    ):
+        logger.info(f"Starting heartbeats for CLIENT #{client_id}")
+
+        url = f"{CLIENTS_URL[client_id]}/health"
+        timeout = min_timeout
+
+        # TODO: add exponential backoff
+        delay = 1.0  # seconds
+
+        while True:
+            good = False
+
+            try:
+                response = requests.get(url, timeout=timeout)
+                if response.status_code == 200:
+                    good = True
+            except requests.exceptions.RequestException:
+                pass
+
+            if good:
+                logger.info(f"CLIENT #{client_id} is live")
+                timeout = min_timeout
+
+            if not good:
+                # TODO: add exponential backoff
+                timeout = min(1.3 * timeout, max_timeout)
+
+                current_status = self._clients_status[client_id]
+                if current_status == CLIENT_STATUS.LIVE:
+                    self._clients_status[client_id] = CLIENT_STATUS.SUSPECTED
+                    logger.warn(
+                        f"CLIENT #{client_id} is suspected to be dead"
+                    )
+                elif current_status == CLIENT_STATUS.SUSPECTED:
+                    self._clients_status[client_id] = CLIENT_STATUS.DEAD
+
+                logger.warn(
+                    f"CLIENT #{client_id} status is {self._clients_status[client_id]}"
+                )
+
+            time.sleep(delay)
+
+    def start_heartbeats(self):
+        for client in self._clients:
+            self.executor.submit(self.__heartbeats, client)
+
+
 class Log(object):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS + 1)
 
@@ -35,8 +104,6 @@ class Log(object):
         self._indices: Set = set()
         self._messages_num: int = 0
         self._current_index: int = 0
-
-        self._lock = Lock()
 
     def add_message(self, message: str, index: int):
         if index in self._indices:
@@ -48,7 +115,9 @@ class Log(object):
 
     @property
     def messages(self):
-        return map(lambda x: x[1], heapq.nsmallest(self._messages_num, self._messages))
+        return list(
+            map(lambda x: x[1], heapq.nsmallest(self._messages_num, self._messages))
+        )
 
     @property
     def current_index(self):
@@ -73,9 +142,8 @@ class Log(object):
         return True
 
     def replicate_message(self, message: Message):
-        with self._lock:
-            self._current_index += 1
-            message.index = self._current_index
+        self._current_index += 1
+        message.index = self._current_index
 
         futures = [
             self.executor.submit(self.replicate_once, message, client_id)
@@ -117,6 +185,11 @@ def get_root():
     return {"message": f"Hello World from MASTER | NUM_CLIENTS: {NUM_CLIENTS}"}
 
 
+@app.get("/health")
+def get_health():
+    return
+
+
 @app.get("/messages")
 def get_messages():
     return {"messages": log.messages}
@@ -134,3 +207,10 @@ def add_messages(message: Message):
     logger.info(f"Message '{message.text}' has been successfully replicated")
 
     return
+
+
+@app.on_event("startup")
+def app_startup():
+    clients_manager = ClientsManager()
+    clients_manager.start_heartbeats()
+    logger.info("Heartbeats started")
