@@ -23,7 +23,7 @@ Note: Substitute 6000 port with the port of the master/client you want to intera
 1. Submit a new message with the write concern (1 by default)
 
    ```bash
-   curl -X POST -H "Content-Type: application/json" -d '{"message": "Hello World", "write_concern": 1}' http://localhost:6000/submit
+   curl -X POST -H "Content-Type: application/json" -d '{"message": "Hello World", "write_concern": 1}' http://localhost:6000/messages
    ```
 
 2. Get the log (from the master or any client)
