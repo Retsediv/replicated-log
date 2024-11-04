@@ -1,5 +1,14 @@
 # Replicated Log
 
+## Features
+
+- Heartbeats
+- Async replication with retry-mechanism
+- Deduplication
+- Total ordering
+- Quorum append
+  If there is no quorum the master should be switched into read-only mode and shouldn’t accept messages append requests and should return the appropriate message
+
 ## How to run the code
 
 ```bash
