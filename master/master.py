@@ -63,6 +63,16 @@ class ClientsManager(object):
     def client_events(self, client_id: int):
         return self._clients_events[client_id]
 
+    @property
+    def is_quorum(self):
+        num_live = sum(
+            map(
+                lambda x: 1 if x == CLIENT_STATUS.LIVE else 0,
+                self._clients_status,
+            )
+        )
+        return num_live >= (NUM_CLIENTS + 1) // 2
+
     def __heartbeats(
         self, client_id: int, min_delay: float = 0.5, max_delay: float = 5.0
     ):
@@ -111,7 +121,6 @@ class ClientsManager(object):
             self.executor.submit(self.__heartbeats, client)
 
 
-# TODO: total ordering for MasterLog
 class MasterLog(object):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS + 1)
 
@@ -242,9 +251,12 @@ def add_messages(message: Message):
     ), "Write concern should be less than or equal to (NUM_CLIENTS + 1)"
     assert message.write_concern > 0, "Write concern should be greater than 0"
 
+    if not clients_manager.is_quorum:
+        logger.error("Quorum is not available, rejecting the message")
+        return {"error": "There is no quorum. Master works in read-only mode"}, 503
+
     log.replicate_message(message, clients_manager)
     logger.info(f"Message '{message.text}' has been successfully replicated")
-
     return
 
 
