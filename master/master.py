@@ -48,15 +48,13 @@ class ClientsManager(object):
         return self._clients
 
     def __heartbeats(
-        self, client_id: int, min_timeout: float = 0.25, max_timeout: float = 5.0
+        self, client_id: int, min_delay: float = 0.5, max_delay: float = 5.0
     ):
         logger.info(f"Starting heartbeats for CLIENT #{client_id}")
 
         url = f"{CLIENTS_URL[client_id]}/health"
-        timeout = min_timeout
-
-        # TODO: add exponential backoff
-        delay = 1.0  # seconds
+        timeout = 1.0  # seconds
+        delay = min_delay  # seconds
 
         while True:
             good = False
@@ -70,18 +68,15 @@ class ClientsManager(object):
 
             if good:
                 logger.info(f"CLIENT #{client_id} is live")
-                timeout = min_timeout
+                delay = min_delay
 
             if not good:
-                # TODO: add exponential backoff
-                timeout = min(1.3 * timeout, max_timeout)
+                delay = min(1.25 * delay, max_delay)
 
                 current_status = self._clients_status[client_id]
                 if current_status == CLIENT_STATUS.LIVE:
                     self._clients_status[client_id] = CLIENT_STATUS.SUSPECTED
-                    logger.warn(
-                        f"CLIENT #{client_id} is suspected to be dead"
-                    )
+                    logger.warn(f"CLIENT #{client_id} is suspected to be dead")
                 elif current_status == CLIENT_STATUS.SUSPECTED:
                     self._clients_status[client_id] = CLIENT_STATUS.DEAD
 
