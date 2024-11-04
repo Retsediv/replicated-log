@@ -1,4 +1,4 @@
-# Replicated Log (Part 3 in progress...)
+# Replicated Log
 
 ## How to run the code
 
