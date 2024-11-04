@@ -170,15 +170,21 @@ class MasterLog(object):
             f"Replicating message '{message.text}' to CLIENT {CLIENTS_HOSTNAME[client_id]}"
         )
 
-        clients_manager.client_events(client_id).wait()
-        logger.info(f"CLIENT#{client_id} is live, sending message '{message.text}'")
+        def replicate() -> bool:
+            clients_manager.client_events(client_id).wait()
+            logger.info(f"CLIENT#{client_id} is live, sending message '{message.text}'")
 
-        url = f"{CLIENTS_URL[client_id]}/internal/messages"
-        respose = requests.post(
-            url, json={"text": message.text, "index": message.index}, timeout=100
-        )
-        if respose.status_code != 200:
-            return False
+            url = f"{CLIENTS_URL[client_id]}/internal/messages"
+            respose = requests.post(
+                url, json={"text": message.text, "index": message.index}, timeout=100
+            )
+            if respose.status_code != 200:
+                return False
+            return True
+
+        is_replicated = False
+        while not is_replicated:
+            is_replicated = replicate()
 
         logger.info(
             f"Received confirmation from CLIENT#{client_id} for message '{message.text}'"
