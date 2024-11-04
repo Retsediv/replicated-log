@@ -3,6 +3,7 @@ import enum
 import heapq
 import logging
 import os
+import threading
 import time
 from typing import List, Set
 
@@ -37,15 +38,30 @@ class CLIENT_STATUS(enum.Enum):
 class ClientsManager(object):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._clients: List[int] = [i for i in range(0, NUM_CLIENTS)]
+
         self._clients_status: List[CLIENT_STATUS] = [
             CLIENT_STATUS.LIVE for _ in range(0, NUM_CLIENTS)
+        ]
+        self._clients_events: List[threading.Event] = [
+            threading.Event() for _ in range(0, NUM_CLIENTS)
         ]
 
     @property
     def clients(self):
         return self._clients
+
+    @property
+    def clients_status(self):
+        return self._clients_status
+
+    @property
+    def clients_events(self):
+        return self._clients_events
+
+    def client_events(self, client_id: int):
+        return self._clients_events[client_id]
 
     def __heartbeats(
         self, client_id: int, min_delay: float = 0.5, max_delay: float = 5.0
@@ -53,8 +69,8 @@ class ClientsManager(object):
         logger.info(f"Starting heartbeats for CLIENT #{client_id}")
 
         url = f"{CLIENTS_URL[client_id]}/health"
-        timeout = 1.0  # seconds
-        delay = min_delay  # seconds
+        timeout = 1.0  # second
+        delay = min_delay
 
         while True:
             good = False
@@ -69,9 +85,13 @@ class ClientsManager(object):
             if good:
                 logger.info(f"CLIENT #{client_id} is live")
                 delay = min_delay
+                self._clients_events[client_id].set()
+                self._clients_status[client_id] = CLIENT_STATUS.LIVE
 
             if not good:
                 delay = min(1.25 * delay, max_delay)
+
+                self._clients_events[client_id].clear()
 
                 current_status = self._clients_status[client_id]
                 if current_status == CLIENT_STATUS.LIVE:
@@ -91,10 +111,10 @@ class ClientsManager(object):
             self.executor.submit(self.__heartbeats, client)
 
 
-class Log(object):
+class MasterLog(object):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS + 1)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._messages: List = []
         self._indices: Set = set()
         self._messages_num: int = 0
@@ -118,10 +138,13 @@ class Log(object):
     def current_index(self):
         return self._current_index
 
-    def replicate_once(self, message: Message, client_id: int) -> bool:
+    def replicate_once(self, message: Message, client_id: int, clients_manager: ClientsManager) -> bool:
         logger.info(
             f"Replicating message '{message.text}' to CLIENT {CLIENTS_HOSTNAME[client_id]}"
         )
+
+        clients_manager.client_events(client_id).wait()
+        logger.info(f"CLIENT#{client_id} is live, sending message '{message.text}'")
 
         url = f"{CLIENTS_URL[client_id]}/internal/messages"
         respose = requests.post(
@@ -136,13 +159,13 @@ class Log(object):
 
         return True
 
-    def replicate_message(self, message: Message):
+    def replicate_message(self, message: Message, clients_manager: ClientsManager):
         self._current_index += 1
         message.index = self._current_index
 
         futures = [
-            self.executor.submit(self.replicate_once, message, client_id)
-            for client_id in range(0, NUM_CLIENTS + 0)
+            self.executor.submit(self.replicate_once, message, client_id, clients_manager)
+            for client_id in range(0, NUM_CLIENTS)
         ]
 
         min_responses = message.write_concern - 1  # -1 for the master itself
@@ -172,7 +195,8 @@ class Log(object):
                 return
 
 
-log = Log()
+log = MasterLog()
+clients_manager = ClientsManager()
 
 
 @app.get("/")
@@ -198,7 +222,7 @@ def add_messages(message: Message):
     ), "Write concern should be less than or equal to (NUM_CLIENTS + 1)"
     assert message.write_concern > 0, "Write concern should be greater than 0"
 
-    log.replicate_message(message)
+    log.replicate_message(message, clients_manager)
     logger.info(f"Message '{message.text}' has been successfully replicated")
 
     return
@@ -206,6 +230,5 @@ def add_messages(message: Message):
 
 @app.on_event("startup")
 def app_startup():
-    clients_manager = ClientsManager()
     clients_manager.start_heartbeats()
     logger.info("Heartbeats started")
