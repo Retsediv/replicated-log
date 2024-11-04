@@ -120,12 +120,12 @@ class MasterLog(object):
         self._messages_num: int = 0
         self._current_index: int = 0
 
-    def add_message(self, message: str, index: int):
-        if index in self._indices:
+    def add_message(self, message: Message):
+        if message.index in self._indices:
             return
 
-        heapq.heappush(self._messages, (index, message))
-        self._indices.add(index)
+        heapq.heappush(self._messages, (message.index, message.text))
+        self._indices.add(message.index)
         self._messages_num += 1
 
     @property
@@ -173,7 +173,7 @@ class MasterLog(object):
             logger.info(
                 f"No confirmation is needed, updating internal log state for message {message.text}"
             )
-            self.add_message(message.text, message.index)
+            self.add_message(message)
             return
 
         completed_responses = 0
@@ -191,7 +191,7 @@ class MasterLog(object):
                     f"Received minimum required responses for message {message.text}, updating internal log state."
                 )
 
-                self.add_message(message.text, message.index)
+                self.add_message(message)
                 return
 
 
