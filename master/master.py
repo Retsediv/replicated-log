@@ -79,7 +79,7 @@ class ClientsManager(object):
                 response = requests.get(url, timeout=timeout)
                 if response.status_code == 200:
                     good = True
-            except requests.exceptions.RequestException:
+            except Exception as _:
                 pass
 
             if good:
@@ -111,14 +111,18 @@ class ClientsManager(object):
             self.executor.submit(self.__heartbeats, client)
 
 
+# TODO: total ordering for MasterLog
 class MasterLog(object):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=NUM_CLIENTS + 1)
 
     def __init__(self) -> None:
         self._messages: List = []
-        self._indices: Set = set()
-        self._messages_num: int = 0
+        self._total_messages: int = 0
         self._current_index: int = 0
+        self._num_consecutive: int = 0
+
+        self._indices: Set = set()
+        self._buffer_indeces: List = []
 
     def add_message(self, message: Message):
         if message.index in self._indices:
@@ -126,19 +130,33 @@ class MasterLog(object):
 
         heapq.heappush(self._messages, (message.index, message.text))
         self._indices.add(message.index)
-        self._messages_num += 1
+        self._total_messages += 1
+
+        # if current index is consecutive to the last index then
+        #  increment the counter, else append the index to the buffer
+        #  and then check if the buffer has consecutive index we are missing
+        heapq.heappush(self._buffer_indeces, message.index)
+        while self._buffer_indeces:
+            next_consecutive = self._num_consecutive + 1
+            if self._buffer_indeces[0] == next_consecutive:
+                self._num_consecutive += 1
+                heapq.heappop(self._buffer_indeces)
+            else:
+                break
 
     @property
     def messages(self):
         return list(
-            map(lambda x: x[1], heapq.nsmallest(self._messages_num, self._messages))
+            map(lambda x: x[1], heapq.nsmallest(self._num_consecutive, self._messages))
         )
 
     @property
     def current_index(self):
         return self._current_index
 
-    def replicate_once(self, message: Message, client_id: int, clients_manager: ClientsManager) -> bool:
+    def replicate_once(
+        self, message: Message, client_id: int, clients_manager: ClientsManager
+    ) -> bool:
         logger.info(
             f"Replicating message '{message.text}' to CLIENT {CLIENTS_HOSTNAME[client_id]}"
         )
@@ -164,7 +182,9 @@ class MasterLog(object):
         message.index = self._current_index
 
         futures = [
-            self.executor.submit(self.replicate_once, message, client_id, clients_manager)
+            self.executor.submit(
+                self.replicate_once, message, client_id, clients_manager
+            )
             for client_id in range(0, NUM_CLIENTS)
         ]
 

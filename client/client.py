@@ -26,8 +26,8 @@ class LogReplica:
         self._num_consecutive = 0
         self._total_messages = 0
 
-        self.__buffer_indeces: List = []
-        self.__indeces: Set = set()
+        self._buffer_indeces: List = []
+        self._indices: Set = set()
 
     @property
     def messages(self):
@@ -35,33 +35,25 @@ class LogReplica:
             map(lambda x: x[1], heapq.nsmallest(self._num_consecutive, self._messages))
         )
 
-    @property
-    def get_messages(self):
-        return self._messages
-
     def add_message(self, message: Message):
-        if message.index in self.__indeces:
+        if message.index in self._indices:
             return
 
         heapq.heappush(self._messages, (message.index, message.text))
+        self._indices.add(message.index)
         self._total_messages += 1
-        self.__indeces.add(message.index)
 
         # if current index is consecutive to the last index then
         #  increment the counter, else append the index to the buffer
-        last_index = self._num_consecutive
-        if message.index == last_index + 1:
-            self._num_consecutive += 1
-        else:
-            heapq.heappush(self.__buffer_indeces, message.index)
-
-            # check if the buffer has consecutive index we are missing
-            while self.__buffer_indeces:
-                if self.__buffer_indeces[0] == last_index + 1:
-                    self._num_consecutive += 1
-                    heapq.heappop(self.__buffer_indeces)
-                else:
-                    break
+        #  and then check if the buffer has consecutive index we are missing
+        heapq.heappush(self._buffer_indeces, message.index)
+        while self._buffer_indeces:
+            next_consecutive = self._num_consecutive + 1
+            if self._buffer_indeces[0] == next_consecutive:
+                self._num_consecutive += 1
+                heapq.heappop(self._buffer_indeces)
+            else:
+                break
 
 
 log = LogReplica()
